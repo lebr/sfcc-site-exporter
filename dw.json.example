@@ -1,0 +1,5 @@
+{
+  "hostname": "your-sandbox.dx.commercecloud.salesforce.com",
+  "client-id": "your-oauth-client-id",
+  "client-secret": "your-oauth-client-secret"
+}

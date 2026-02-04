@@ -1,0 +1,35 @@
+{
+  "archive": {
+    "name": "export-{date}-{timestamp}"
+  },
+  "dataUnits": {
+    "global_data": {
+      "meta_data": true,
+      "custom_types": true,
+      "preferences": false,
+      "services": false,
+      "locales": false,
+      "job_schedules": false,
+      "ocapi_settings": false
+    },
+    "sites": {
+      "PB_FR": {
+        "content": true,
+        "site_preferences": true,
+        "customer_groups": true,
+        "campaigns_and_promotions": false,
+        "coupons": false,
+        "custom_objects": false,
+        "payment_methods": false,
+        "payment_processors": false,
+        "shipping": false,
+        "stores": false,
+        "tax": false,
+        "redirect_urls": false,
+        "slots": false,
+        "sorting_rules": false,
+        "search_settings": false
+      }
+    }
+  }
+}
