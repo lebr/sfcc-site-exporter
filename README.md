@@ -136,9 +136,8 @@ The interactive mode (`--interactive` or `-i`) provides a guided wizard to selec
 1. **Global Data** - Select global data units (meta_data, custom_types, etc.)
 2. **Sites** - Choose sites to export (can fetch from instance or enter manually)
 3. **Site Data Units** - Select per-site data (preferences, customer_groups, etc.)
-4. **Additional Resources** - Optionally add inventory lists
-5. **Output Options** - Configure output directory and archive naming
-6. **Save Configuration** - Optionally save your selections to a config file for reuse
+4. **Output Options** - Configure output directory and archive naming
+5. **Save Configuration** - Optionally save your selections to a config file for reuse
 
 ```bash
 sfcc-site-exporter export -i
