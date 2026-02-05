@@ -34,20 +34,22 @@ program
 	)
 	.option(
 		"-n, --instance <name>",
-		"Instance name from dw.json (for multi-instance configs)",
+		"Instance name from dw.json to export from (for multi-instance configs)",
 	)
 	.option(
 		"-k, --keep-archive",
 		"Keep archive on the SFCC instance after download",
 		false,
 	)
-	.option("-z, --zip-only", "Save as zip file without extracting", false)
+	.option(
+		"--import-to <instance>",
+		"After export, import the archive to this instance (from dw.json)",
+	)
 	.option(
 		"-t, --timeout <seconds>",
 		"Timeout in seconds for the export job",
 		"600",
 	)
-	.option("--no-download", "Do not download archive (implies --keep-archive)")
 	.option(
 		"-d, --debug",
 		"Enable debug logging with network traffic details",

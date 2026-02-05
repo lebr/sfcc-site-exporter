@@ -1,18 +1,21 @@
 # SFCC Site Exporter
 
-A configurable CLI tool to export SFCC (Salesforce Commerce Cloud) site data using the [b2c-cli](https://github.com/SalesforceCommerceCloud/b2c-developer-tooling/blob/main/packages/b2c-cli/README.md).
+A configurable CLI tool to export and import SFCC (Salesforce Commerce Cloud) site data using the [b2c-cli](https://github.com/SalesforceCommerceCloud/b2c-developer-tooling/blob/main/packages/b2c-cli/README.md).
 
 ## Features
 
 - 📦 **Configurable Exports** - Fine-grained control over what data to export via JSON configuration or interactively in your terminal
 - 🔐 **Authentication** - Uses b2c-cli and standard dw.json authentication
 - 📥 **WebDAV Download** - Automatically retrieves exported archives from the instance
-- 🎯 **Multiple Data Types** - Export sites data and or global data
+- 🎯 **Multiple Data Types** - Export sites data and/or global data
 - 📝 **Archive Naming** - Customizable archive names with date/time placeholders
+- 🔄 **Multi-Instance Support** - Configure multiple SFCC instances (dev, staging, on-demand sandboxes) in a single dw.json
+- 📤 **Import Support** - Export from one instance and import to another in a single command
 
 ## Related documentation
 
 - [Official SFCC Site Export Job Documentation](https://salesforcecommercecloud.github.io/b2c-dev-doc/docs/current/jobstepapi/html/index.html?target=jobstep.SiteExport.html)
+- [Official SFCC Site Import Job Documentation](https://salesforcecommercecloud.github.io/b2c-dev-doc/docs/current/jobstepapi/html/index.html?target=jobstep.ImportSiteArchive.html)
 - [b2c-developer-tooling CLI](https://github.com/SalesforceCommerceCloud/b2c-developer-tooling)
 
 ## Prerequisites
@@ -21,7 +24,7 @@ A configurable CLI tool to export SFCC (Salesforce Commerce Cloud) site data usi
 - **b2c CLI installed globally** (`npm install -g @salesforce/b2c-cli`)
 - SFCC instance with:
   - OAuth API Client credentials (client ID & secret)
-  - WebDAV access configured (client ID & secret)
+  - WebDAV access configured (username & access key)
   - Appropriate OCAPI permissions for job execution
 
 ## Installation
@@ -41,15 +44,57 @@ npm link
 
 ### 1. SFCC Instance Configuration (`dw.json`)
 
-Create a `dw.json` file in the project root (or use environment variables):
+Create a `dw.json` file in the project root. You can configure a single instance or multiple instances.
+
+#### Single Instance Configuration
 
 ```json
 {
   "hostname": "your-sandbox.dx.commercecloud.salesforce.com",
   "client-id": "your-oauth-client-id",
-  "client-secret": "your-oauth-client-secret"
+  "client-secret": "your-oauth-client-secret",
+  "username": "your-bm-username",
+  "password": "your-webdav-access-key"
 }
 ```
+
+#### Multi-Instance Configuration (Recommended)
+
+For projects that work with multiple instances (dev, staging, production), use the `configs` array:
+
+```json
+{
+  "configs": [
+    {
+      "name": "dev",
+      "active": true,
+      "hostname": "dev-sandbox.dx.commercecloud.salesforce.com",
+      "client-id": "your-oauth-client-id",
+      "client-secret": "your-oauth-client-secret",
+      "username": "your-bm-username",
+      "password": "your-webdav-access-key"
+    },
+    {
+      "name": "staging",
+      "hostname": "staging-sandbox.dx.commercecloud.salesforce.com",
+      "client-id": "your-oauth-client-id",
+      "client-secret": "your-oauth-client-secret",
+      "username": "your-bm-username",
+      "password": "your-webdav-access-key"
+    },
+    {
+      "name": "production",
+      "hostname": "production.dx.commercecloud.salesforce.com",
+      "client-id": "your-oauth-client-id",
+      "client-secret": "your-oauth-client-secret",
+      "username": "your-bm-username",
+      "password": "your-webdav-access-key"
+    }
+  ]
+}
+```
+
+The instance with `"active": true` is used by default. Use `-n/--instance` flag to select a different instance.
 
 Alternatively, use environment variables:
 ```bash
@@ -116,11 +161,13 @@ sfcc-site-exporter export -c ./export-config.json --output ./my-exports
 # Keep archive on instance after download
 sfcc-site-exporter export -c ./export-config.json --keep-archive
 
-# Download as zip without extracting
-sfcc-site-exporter export -c ./export-config.json --zip-only
-
 # Use specific instance from multi-instance dw.json
 sfcc-site-exporter export -c ./export-config.json --instance staging
+# or short form
+sfcc-site-exporter export -c ./export-config.json -n staging
+
+# Export from one instance and import to another
+sfcc-site-exporter export -c ./export-config.json -n dev --import-to staging
 
 # Set timeout (in seconds)
 sfcc-site-exporter export -c ./export-config.json --timeout 900
@@ -133,11 +180,13 @@ sfcc-site-exporter export -c ./export-config.json --debug
 
 The interactive mode (`--interactive` or `-i`) provides a guided wizard to select what to export:
 
-1. **Global Data** - Select global data units (meta_data, custom_types, etc.)
-2. **Sites** - Choose sites to export (can fetch from instance or enter manually)
-3. **Site Data Units** - Select per-site data (preferences, customer_groups, etc.)
-4. **Output Options** - Configure output directory and archive naming
-5. **Save Configuration** - Optionally save your selections to a config file for reuse
+1. **Instance Selection** - If multi-instance dw.json, select which instance to export from
+2. **Global Data** - Select global data units (meta_data, custom_types, etc.)
+3. **Sites** - Choose sites to export (can fetch from instance or enter manually)
+4. **Site Data Units** - Select per-site data (preferences, customer_groups, etc.)
+5. **Output Options** - Configure output directory and archive naming
+6. **Import Options** - Optionally import the archive to another instance after export
+7. **Save Configuration** - Optionally save your selections to a config file for reuse
 
 ```bash
 sfcc-site-exporter export -i

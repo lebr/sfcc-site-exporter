@@ -33,8 +33,39 @@ export function checkDwJsonExists() {
 }
 
 /**
+ * Gets available instances from dw.json (for multi-instance configurations)
+ * @returns {{instances: Array<{name: string, hostname: string, active: boolean}>|null, path: string|null}}
+ */
+export function getAvailableInstances() {
+	const dwJsonCheck = checkDwJsonExists();
+	if (!dwJsonCheck.exists || dwJsonCheck.path === "environment variables") {
+		return { instances: null, path: dwJsonCheck.path };
+	}
+
+	try {
+		const dwJsonContent = fs.readFileSync(dwJsonCheck.path, "utf-8");
+		const dwJson = JSON.parse(dwJsonContent);
+
+		// Check for multi-instance configuration (configs array)
+		if (dwJson.configs && Array.isArray(dwJson.configs)) {
+			const instances = dwJson.configs.map((config) => ({
+				name: config.name || "unnamed",
+				hostname: config.hostname || config.server || "unknown",
+				active: config.active === true,
+			}));
+			return { instances, path: dwJsonCheck.path };
+		}
+
+		// Single instance configuration - return null to indicate no multi-instance
+		return { instances: null, path: dwJsonCheck.path };
+	} catch {
+		return { instances: null, path: dwJsonCheck.path };
+	}
+}
+
+/**
  * Tests connectivity to the SFCC instance using b2c setup config
- * @param {object} options - Options including debug flag
+ * @param {object} options - Options including debug flag and instance name
  * @returns {Promise<{success: boolean, hostname: string|null, error: string|null}>}
  */
 export async function testInstanceConnectivity(options = {}) {
@@ -180,8 +211,6 @@ export function buildExportArgs(dataUnits, exportOptions = {}) {
 	const {
 		outputPath = "./exports",
 		keepArchive = false,
-		zipOnly = false,
-		noDownload = false,
 		timeout = 600,
 	} = exportOptions;
 
@@ -196,15 +225,8 @@ export function buildExportArgs(dataUnits, exportOptions = {}) {
 		args.push("--keep-archive");
 	}
 
-	// Zip only flag
-	if (zipOnly) {
-		args.push("--zip-only");
-	}
-
-	// No download flag
-	if (noDownload) {
-		args.push("--no-download");
-	}
+	// Always download as zip (no extraction)
+	args.push("--zip-only");
 
 	// Build arguments using individual flags instead of --data-units JSON
 	// This provides better compatibility with different SFCC instance versions
@@ -266,8 +288,6 @@ export async function executeSiteExport(dataUnits, options = {}) {
 	const {
 		outputPath = "./exports",
 		keepArchive = false,
-		zipOnly = false,
-		noDownload = false,
 		timeout = 600,
 		debug = false,
 		instance = null,
@@ -285,7 +305,7 @@ export async function executeSiteExport(dataUnits, options = {}) {
 
 	// Ensure output directory exists
 	const absoluteOutputPath = path.resolve(outputPath);
-	if (!noDownload && !fs.existsSync(absoluteOutputPath)) {
+	if (!fs.existsSync(absoluteOutputPath)) {
 		fs.mkdirSync(absoluteOutputPath, { recursive: true });
 	}
 
@@ -293,8 +313,6 @@ export async function executeSiteExport(dataUnits, options = {}) {
 	const args = buildExportArgs(dataUnits, {
 		outputPath: absoluteOutputPath,
 		keepArchive,
-		zipOnly,
-		noDownload,
 		timeout,
 	});
 
@@ -368,4 +386,73 @@ export async function getInstanceInfo(options = {}) {
 		hostname: "configured instance",
 		codeVersion: null,
 	};
+}
+
+/**
+ * Executes a site archive import using b2c CLI
+ * @param {string} archivePath - Path to the archive file to import
+ * @param {object} options - Import options
+ * @returns {Promise<object>} Import result
+ */
+export async function executeSiteImport(archivePath, options = {}) {
+	const {
+		timeout = 600,
+		debug = false,
+		instance = null,
+		keepArchive = false,
+	} = options;
+
+	// Check if archive exists
+	if (!fs.existsSync(archivePath)) {
+		throw new Error(`Archive file not found: ${archivePath}`);
+	}
+
+	// Build import arguments
+	const args = ["job", "import", archivePath];
+
+	// Timeout
+	args.push("--timeout", timeout.toString());
+
+	// Keep archive flag
+	if (keepArchive) {
+		args.push("--keep-archive");
+	}
+
+	// Execute the command
+	const result = await executeB2cCommand(args, {
+		debug,
+		instance,
+	});
+
+	if (result.code !== 0) {
+		// Try to parse error from JSON output
+		let errorMessage = "Import failed";
+		try {
+			const output = JSON.parse(result.stdout || result.stderr);
+			if (output.error) {
+				errorMessage = output.error.message || output.error;
+			} else if (output.message) {
+				errorMessage = output.message;
+			}
+		} catch {
+			// Use stderr if JSON parsing fails
+			errorMessage =
+				result.stderr || result.stdout || "Import failed with unknown error";
+		}
+		throw new Error(errorMessage);
+	}
+
+	// Parse the result
+	try {
+		const output = JSON.parse(result.stdout);
+		return {
+			success: true,
+			...output,
+		};
+	} catch {
+		// Return basic success if JSON parsing fails
+		return {
+			success: true,
+		};
+	}
 }

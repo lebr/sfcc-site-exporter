@@ -2,10 +2,10 @@
  * Interactive CLI prompts for SFCC Site Exporter
  */
 
-import { checkbox, confirm, input } from "@inquirer/prompts";
+import { checkbox, confirm, input, select } from "@inquirer/prompts";
 import chalk from "chalk";
 import { globalDataOptions, siteDataOptions } from "./config.js";
-import { executeB2cCommand } from "./exporter.js";
+import { executeB2cCommand, getAvailableInstances } from "./exporter.js";
 
 /**
  * Descriptions for global data units
@@ -74,11 +74,12 @@ const SITE_DATA_DESCRIPTIONS = {
 
 /**
  * Fetches available sites from the SFCC instance
+ * @param {string|null} instance - Instance name to use
  * @returns {Promise<string[]>} Array of site IDs
  */
-async function fetchAvailableSites() {
+async function fetchAvailableSites(instance = null) {
 	try {
-		const result = await executeB2cCommand(["sites", "list"], {});
+		const result = await executeB2cCommand(["sites", "list"], { instance });
 		if (result.code === 0) {
 			const sites = JSON.parse(result.stdout);
 			if (sites?.data && Array.isArray(sites.data)) {
@@ -92,11 +93,107 @@ async function fetchAvailableSites() {
 }
 
 /**
+ * Prompts user to select an instance from available instances
+ * @returns {Promise<string|null>} Selected instance name or null
+ */
+export async function promptInstanceSelection() {
+	const { instances } = getAvailableInstances();
+
+	if (!instances || instances.length === 0) {
+		return null; // Single instance or no multi-instance config
+	}
+
+	console.log(chalk.yellow("Step 0: Instance Selection"));
+	console.log(
+		chalk.gray("Your dw.json contains multiple instance configurations\n"),
+	);
+
+	const choices = instances.map((inst) => ({
+		name: `${inst.name} ${chalk.gray(`(${inst.hostname})`)}${inst.active ? chalk.green(" [active]") : ""}`,
+		value: inst.name,
+	}));
+
+	const selectedInstance = await select({
+		message: "Select the instance to export from:",
+		choices,
+	});
+
+	return selectedInstance;
+}
+
+/**
+ * Prompts user to select an import target instance
+ * @param {string|null} excludeInstance - Instance to exclude from selection (the export source)
+ * @returns {Promise<string|null>} Selected instance name or null
+ */
+export async function promptImportTargetSelection(excludeInstance = null) {
+	const { instances } = getAvailableInstances();
+
+	if (!instances || instances.length === 0) {
+		// Single instance config - ask for manual input
+		const wantImport = await confirm({
+			message: "Would you like to import the archive to another instance?",
+			default: false,
+		});
+
+		if (!wantImport) {
+			return null;
+		}
+
+		console.log(
+			chalk.yellow("\n⚠️  Your dw.json has a single instance configuration."),
+		);
+		console.log(
+			chalk.gray(
+				"   To import to another instance, update your dw.json to use multi-instance format.\n",
+			),
+		);
+		return null;
+	}
+
+	// Filter out the source instance
+	const availableTargets = instances.filter(
+		(inst) => inst.name !== excludeInstance,
+	);
+
+	if (availableTargets.length === 0) {
+		console.log(
+			chalk.yellow("\n⚠️  No other instances available for import.\n"),
+		);
+		return null;
+	}
+
+	const wantImport = await confirm({
+		message: "Would you like to import the archive to another instance?",
+		default: false,
+	});
+
+	if (!wantImport) {
+		return null;
+	}
+
+	const choices = availableTargets.map((inst) => ({
+		name: `${inst.name} ${chalk.gray(`(${inst.hostname})`)}`,
+		value: inst.name,
+	}));
+
+	const selectedInstance = await select({
+		message: "Select the target instance for import:",
+		choices,
+	});
+
+	return selectedInstance;
+}
+
+/**
  * Runs the interactive export configuration wizard
  * @returns {Promise<object>} Export configuration object
  */
 export async function runInteractivePrompts() {
 	console.log(chalk.cyan("\n📋 Interactive Export Configuration\n"));
+
+	// Step 0: Instance Selection (if multi-instance config)
+	const selectedSourceInstance = await promptInstanceSelection();
 
 	// Step 1: Global Data Selection
 	console.log(chalk.yellow("Step 1: Global Data"));
@@ -130,7 +227,7 @@ export async function runInteractivePrompts() {
 	let availableSites = null;
 	if (fetchSites) {
 		console.log(chalk.gray("Fetching sites from instance..."));
-		availableSites = await fetchAvailableSites();
+		availableSites = await fetchAvailableSites(selectedSourceInstance);
 		if (availableSites && availableSites.length > 0) {
 			console.log(chalk.green(`Found ${availableSites.length} sites\n`));
 		} else {
@@ -233,6 +330,7 @@ export async function runInteractivePrompts() {
 		output_directory: outputDir,
 		archive_name_template: archiveNameTemplate,
 		keep_archive: keepArchive,
+		source_instance: selectedSourceInstance,
 		global_data: {},
 		sites: {},
 	};
@@ -248,6 +346,15 @@ export async function runInteractivePrompts() {
 		for (const unit of dataUnits) {
 			config.sites[site][unit] = true;
 		}
+	}
+
+	// Step 5: Import Options
+	console.log(chalk.yellow("\nStep 5: Import Options"));
+	const importTarget = await promptImportTargetSelection(
+		selectedSourceInstance,
+	);
+	if (importTarget) {
+		config.import_to_instance = importTarget;
 	}
 
 	// Ask to save config
@@ -274,11 +381,19 @@ export async function runInteractivePrompts() {
 export function displayInteractiveSummary(config) {
 	console.log(chalk.cyan("\n📦 Export Configuration Summary:\n"));
 
+	// Show source instance if specified
+	if (config.source_instance) {
+		console.log(
+			chalk.white("  Source Instance:"),
+			chalk.cyan(config.source_instance),
+		);
+	}
+
 	const globalUnits = Object.keys(config.global_data || {}).filter(
 		(k) => config.global_data[k],
 	);
 	if (globalUnits.length > 0) {
-		console.log(chalk.white("  Global Data:"));
+		console.log(chalk.white("\n  Global Data:"));
 		for (const unit of globalUnits) {
 			console.log(chalk.gray(`    - ${unit}`));
 		}
@@ -302,6 +417,14 @@ export function displayInteractiveSummary(config) {
 		console.log(
 			chalk.white("  Inventory Lists:"),
 			config.inventory_lists.join(", "),
+		);
+	}
+
+	// Show import target if specified
+	if (config.import_to_instance) {
+		console.log(
+			chalk.white("\n  Import To:"),
+			chalk.green(config.import_to_instance),
 		);
 	}
 

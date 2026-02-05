@@ -1,0 +1,29 @@
+{
+  "configs": [
+    {
+      "name": "dev",
+      "active": true,
+      "hostname": "dev-sandbox.dx.commercecloud.salesforce.com",
+      "client-id": "your-oauth-client-id",
+      "client-secret": "your-oauth-client-secret",
+      "username": "your-bm-username",
+      "password": "your-webdav-access-key"
+    },
+    {
+      "name": "staging",
+      "hostname": "staging-sandbox.dx.commercecloud.salesforce.com",
+      "client-id": "your-oauth-client-id",
+      "client-secret": "your-oauth-client-secret",
+      "username": "your-bm-username",
+      "password": "your-webdav-access-key"
+    },
+    {
+      "name": "production",
+      "hostname": "production.dx.commercecloud.salesforce.com",
+      "client-id": "your-oauth-client-id",
+      "client-secret": "your-oauth-client-secret",
+      "username": "your-bm-username",
+      "password": "your-webdav-access-key"
+    }
+  ]
+}

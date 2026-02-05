@@ -16,6 +16,8 @@ import {
 	checkB2cCli,
 	checkDwJsonExists,
 	executeSiteExport,
+	executeSiteImport,
+	getAvailableInstances,
 	getInstanceInfo,
 	testInstanceConnectivity,
 } from "../lib/exporter.js";
@@ -115,10 +117,36 @@ export async function exportCommand(options) {
 			`Instance configuration found: ${chalk.cyan(dwJsonCheck.path)}`,
 		);
 
+		// Check for multi-instance configuration
+		const { instances } = getAvailableInstances();
+		if (
+			instances &&
+			instances.length > 0 &&
+			!options.instance &&
+			!options.interactive
+		) {
+			console.log(chalk.yellow("\n⚠️  Multiple instances found in dw.json."));
+			console.log(
+				chalk.gray("   Use -n/--instance to specify which instance to use."),
+			);
+			console.log(
+				chalk.gray("   Or use -i/--interactive for guided selection."),
+			);
+			console.log(chalk.gray("\n   Available instances:"));
+			for (const inst of instances) {
+				const activeMarker = inst.active ? chalk.green(" [active]") : "";
+				console.log(
+					chalk.gray(`     - ${inst.name} (${inst.hostname})${activeMarker}`),
+				);
+			}
+			console.log("");
+		}
+
 		// Step 3: Test connectivity to the SFCC instance
 		spinner.start("Testing connectivity to SFCC instance...");
 		const connectivityTest = await testInstanceConnectivity({
 			debug: options.debug,
+			instance: options.instance,
 		});
 		if (!connectivityTest.success) {
 			spinner.fail("Failed to connect to SFCC instance");
@@ -141,6 +169,8 @@ export async function exportCommand(options) {
 		let dataUnits;
 		let outputPath;
 		let keepArchive;
+		let sourceInstance;
+		let importToInstance;
 
 		// Interactive mode or config file mode
 		if (options.interactive) {
@@ -156,6 +186,8 @@ export async function exportCommand(options) {
 			// Use output from interactive config or options
 			outputPath = path.resolve(config.output_directory || options.output);
 			keepArchive = config.keep_archive || options.keepArchive;
+			sourceInstance = config.source_instance || options.instance;
+			importToInstance = config.import_to_instance;
 
 			// Save config if requested
 			if (config._saveToFile && config._saveFilePath) {
@@ -182,6 +214,8 @@ export async function exportCommand(options) {
 			dataUnits = filterEnabledDataUnits(loadedConfig.dataUnits);
 			outputPath = path.resolve(options.output);
 			keepArchive = options.keepArchive;
+			sourceInstance = options.instance;
+			importToInstance = options.importTo;
 			config = loadedConfig;
 		}
 
@@ -209,14 +243,26 @@ export async function exportCommand(options) {
 
 		// Get instance info
 		spinner.start("Checking SFCC instance configuration...");
-		const instanceOptions = {};
-		if (options.instance) {
-			instanceOptions.instance = options.instance;
-		}
-		instanceOptions.debug = options.debug;
+		const instanceOptions = {
+			instance: sourceInstance,
+			debug: options.debug,
+		};
 
 		const instanceInfo = await getInstanceInfo(instanceOptions);
-		spinner.succeed(`Instance: ${chalk.cyan(instanceInfo.hostname)}`);
+		spinner.succeed(`Source Instance: ${chalk.cyan(instanceInfo.hostname)}`);
+
+		// Show import target if specified
+		if (importToInstance) {
+			const importInstanceInfo = await getInstanceInfo({
+				instance: importToInstance,
+				debug: options.debug,
+			});
+			console.log(
+				chalk.gray(
+					`   Import target: ${chalk.green(importInstanceInfo.hostname)}`,
+				),
+			);
+		}
 
 		// Generate archive name if template is provided
 		const archiveTemplate =
@@ -232,11 +278,9 @@ export async function exportCommand(options) {
 		const exportOptions = {
 			outputPath,
 			keepArchive,
-			zipOnly: options.zipOnly,
-			noDownload: !options.download, // Note: commander inverts --no-* flags
 			timeout: options.timeout,
 			debug: options.debug,
-			instance: options.instance,
+			instance: sourceInstance,
 		};
 
 		spinner.start("Starting site export job (this may take a while)...");
@@ -249,7 +293,9 @@ export async function exportCommand(options) {
 		spinner.succeed(`Export completed in ${duration}s`);
 
 		// Print result
+		let archivePath = null;
 		if (result.localPath) {
+			archivePath = result.localPath;
 			console.log(
 				chalk.green(`\n✅ Export saved to: ${chalk.bold(result.localPath)}`),
 			);
@@ -263,6 +309,38 @@ export async function exportCommand(options) {
 				console.log(
 					chalk.gray(
 						`   Archive kept on instance at: Impex/src/instance/${result.archiveFilename}`,
+					),
+				);
+			}
+		}
+
+		// Handle import if requested
+		if (importToInstance && archivePath) {
+			console.log("");
+			spinner.start(`Importing archive to ${importToInstance}...`);
+
+			try {
+				const importStartTime = Date.now();
+				await executeSiteImport(archivePath, {
+					timeout: options.timeout,
+					debug: options.debug,
+					instance: importToInstance,
+					keepArchive: false,
+				});
+				const importDuration = ((Date.now() - importStartTime) / 1000).toFixed(
+					1,
+				);
+				spinner.succeed(
+					`Import completed to ${chalk.green(importToInstance)} in ${importDuration}s`,
+				);
+			} catch (importError) {
+				spinner.fail(`Import failed: ${importError.message}`);
+				console.log(
+					chalk.yellow("\n⚠️  Export was successful, but import failed."),
+				);
+				console.log(
+					chalk.gray(
+						`   You can manually import the archive from: ${archivePath}`,
 					),
 				);
 			}
