@@ -323,19 +323,42 @@ export async function executeSiteExport(dataUnits, options = {}) {
 	});
 
 	if (result.code !== 0) {
-		// Try to parse error from JSON output
+		// Try to parse error from JSON output (may be multiline JSON logs)
 		let errorMessage = "Export failed";
+		const fullOutput = result.stdout || result.stderr || "";
+
+		// Check for JobAlreadyRunningException in the output
+		if (fullOutput.includes("JobAlreadyRunningException")) {
+			throw new Error(
+				"The export job is already running on this instance.\n" +
+					"Please wait for the current job to complete and try again.\n" +
+					"You can check job status in Business Manager: Administration > Operations > Jobs",
+			);
+		}
+
+		// Try to extract error message from JSON log lines
 		try {
-			const output = JSON.parse(result.stdout || result.stderr);
-			if (output.error) {
-				errorMessage = output.error.message || output.error;
-			} else if (output.message) {
-				errorMessage = output.message;
+			// b2c-cli outputs newline-delimited JSON logs
+			const lines = fullOutput.split("\n").filter((l) => l.trim());
+			for (const line of lines) {
+				try {
+					const logEntry = JSON.parse(line);
+					// Look for error level messages or error objects
+					if (logEntry.level === "error" && logEntry.msg) {
+						errorMessage = logEntry.msg;
+						break;
+					}
+					if (logEntry.error?.message) {
+						errorMessage = logEntry.error.message;
+						break;
+					}
+				} catch {
+					// Not valid JSON, continue
+				}
 			}
 		} catch {
-			// Use stderr if JSON parsing fails
-			errorMessage =
-				result.stderr || result.stdout || "Export failed with unknown error";
+			// Use raw output if parsing fails completely
+			errorMessage = fullOutput || "Export failed with unknown error";
 		}
 		throw new Error(errorMessage);
 	}

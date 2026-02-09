@@ -21,7 +21,11 @@ program
 program
 	.command("export")
 	.description("Export site data from an SFCC instance")
-	.option("-c, --config <path>", "Path to export configuration file")
+	.option(
+		"-c, --config <path>",
+		"Path to export configuration file indicating which data units to export",
+		"./export-config.json",
+	)
 	.option(
 		"-o, --output <path>",
 		"Output directory for the exported archive",
@@ -32,21 +36,18 @@ program
 		"Run in interactive mode - select what to export via prompts",
 		false,
 	)
-	.option(
-		"-n, --instance <name>",
-		"Instance name from dw.json to export from (for multi-instance configs)",
-	)
+	.option("-f, --from <instance>", "Instance name from dw.json to export from")
 	.option(
 		"-k, --keep-archive",
 		"Keep archive on the SFCC instance after download",
 		false,
 	)
 	.option(
-		"--import-to <instance>",
+		"-t, --to <instance>",
 		"After export, import the archive to this instance (from dw.json)",
 	)
 	.option(
-		"-t, --timeout <seconds>",
+		"-T, --timeout <seconds>",
 		"Timeout in seconds for the export job",
 		"600",
 	)

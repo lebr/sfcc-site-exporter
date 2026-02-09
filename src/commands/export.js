@@ -119,15 +119,19 @@ export async function exportCommand(options) {
 
 		// Check for multi-instance configuration
 		const { instances } = getAvailableInstances();
+
+		// For non-interactive mode with multi-instance config but no instance specified
 		if (
 			instances &&
 			instances.length > 0 &&
-			!options.instance &&
+			!options.from &&
 			!options.interactive
 		) {
 			console.log(chalk.yellow("\n⚠️  Multiple instances found in dw.json."));
 			console.log(
-				chalk.gray("   Use -n/--instance to specify which instance to use."),
+				chalk.gray(
+					"   Use -f/--from to specify which instance to export from.",
+				),
 			);
 			console.log(
 				chalk.gray("   Or use -i/--interactive for guided selection."),
@@ -142,28 +146,31 @@ export async function exportCommand(options) {
 			console.log("");
 		}
 
-		// Step 3: Test connectivity to the SFCC instance
-		spinner.start("Testing connectivity to SFCC instance...");
-		const connectivityTest = await testInstanceConnectivity({
-			debug: options.debug,
-			instance: options.instance,
-		});
-		if (!connectivityTest.success) {
-			spinner.fail("Failed to connect to SFCC instance");
-			console.log(chalk.red(`\n❌ Could not connect to the SFCC instance.`));
-			if (connectivityTest.error) {
-				console.log(chalk.gray(`   Error: ${connectivityTest.error}`));
+		// For non-interactive mode: test connectivity now
+		// For interactive mode: we'll test connectivity after instance selection
+		if (!options.interactive) {
+			spinner.start("Testing connectivity to SFCC instance...");
+			const connectivityTest = await testInstanceConnectivity({
+				debug: options.debug,
+				instance: options.from,
+			});
+			if (!connectivityTest.success) {
+				spinner.fail("Failed to connect to SFCC instance");
+				console.log(chalk.red(`\n❌ Could not connect to the SFCC instance.`));
+				if (connectivityTest.error) {
+					console.log(chalk.gray(`   Error: ${connectivityTest.error}`));
+				}
+				console.log(chalk.gray("\n   Please verify:"));
+				console.log(chalk.gray("   - Your hostname is correct"));
+				console.log(
+					chalk.gray("   - Your client-id and client-secret are valid"),
+				);
+				console.log(chalk.gray("   - Your network can reach the instance"));
+				console.log(chalk.gray("   - Run with -d flag for debug output\n"));
+				process.exit(1);
 			}
-			console.log(chalk.gray("\n   Please verify:"));
-			console.log(chalk.gray("   - Your hostname is correct"));
-			console.log(
-				chalk.gray("   - Your client-id and client-secret are valid"),
-			);
-			console.log(chalk.gray("   - Your network can reach the instance"));
-			console.log(chalk.gray("   - Run with -d flag for debug output\n"));
-			process.exit(1);
+			spinner.succeed(`Connected to: ${chalk.cyan(connectivityTest.hostname)}`);
 		}
-		spinner.succeed(`Connected to: ${chalk.cyan(connectivityTest.hostname)}`);
 
 		let config;
 		let dataUnits;
@@ -174,8 +181,64 @@ export async function exportCommand(options) {
 
 		// Interactive mode or config file mode
 		if (options.interactive) {
-			// Run interactive prompts
+			// Run interactive prompts (includes instance selection)
 			config = await runInteractivePrompts();
+
+			// Get instances from the config
+			sourceInstance = config.source_instance;
+			importToInstance = config.import_to_instance;
+
+			// Now test connectivity to the selected source instance
+			spinner.start(
+				`Testing connectivity to source instance${sourceInstance ? ` (${sourceInstance})` : ""}...`,
+			);
+			const connectivityTest = await testInstanceConnectivity({
+				debug: options.debug,
+				instance: sourceInstance,
+			});
+			if (!connectivityTest.success) {
+				spinner.fail("Failed to connect to source instance");
+				console.log(chalk.red(`\n❌ Could not connect to the SFCC instance.`));
+				if (connectivityTest.error) {
+					console.log(chalk.gray(`   Error: ${connectivityTest.error}`));
+				}
+				console.log(
+					chalk.gray("\n   Please verify your instance configuration.\n"),
+				);
+				process.exit(1);
+			}
+			spinner.succeed(
+				`Connected to source: ${chalk.cyan(connectivityTest.hostname)}`,
+			);
+
+			// If import target is specified, test connectivity to it as well
+			if (importToInstance) {
+				spinner.start(
+					`Testing connectivity to import target (${importToInstance})...`,
+				);
+				const importConnectivityTest = await testInstanceConnectivity({
+					debug: options.debug,
+					instance: importToInstance,
+				});
+				if (!importConnectivityTest.success) {
+					spinner.fail("Failed to connect to import target instance");
+					console.log(
+						chalk.red(`\n❌ Could not connect to the import target instance.`),
+					);
+					if (importConnectivityTest.error) {
+						console.log(
+							chalk.gray(`   Error: ${importConnectivityTest.error}`),
+						);
+					}
+					console.log(
+						chalk.gray("\n   Please verify your instance configuration.\n"),
+					);
+					process.exit(1);
+				}
+				spinner.succeed(
+					`Connected to import target: ${chalk.green(importConnectivityTest.hostname)}`,
+				);
+			}
 
 			// Display summary
 			displayInteractiveSummary(config);
@@ -186,8 +249,7 @@ export async function exportCommand(options) {
 			// Use output from interactive config or options
 			outputPath = path.resolve(config.output_directory || options.output);
 			keepArchive = config.keep_archive || options.keepArchive;
-			sourceInstance = config.source_instance || options.instance;
-			importToInstance = config.import_to_instance;
+			// sourceInstance and importToInstance already set above
 
 			// Save config if requested
 			if (config._saveToFile && config._saveFilePath) {
@@ -214,8 +276,8 @@ export async function exportCommand(options) {
 			dataUnits = filterEnabledDataUnits(loadedConfig.dataUnits);
 			outputPath = path.resolve(options.output);
 			keepArchive = options.keepArchive;
-			sourceInstance = options.instance;
-			importToInstance = options.importTo;
+			sourceInstance = options.from;
+			importToInstance = options.to;
 			config = loadedConfig;
 		}
 
@@ -257,10 +319,8 @@ export async function exportCommand(options) {
 				instance: importToInstance,
 				debug: options.debug,
 			});
-			console.log(
-				chalk.gray(
-					`   Import target: ${chalk.green(importInstanceInfo.hostname)}`,
-				),
+			spinner.succeed(
+				`Import Target Instance: ${chalk.green(importInstanceInfo.hostname)}`,
 			);
 		}
 

@@ -162,12 +162,14 @@ sfcc-site-exporter export -c ./export-config.json --output ./my-exports
 sfcc-site-exporter export -c ./export-config.json --keep-archive
 
 # Use specific instance from multi-instance dw.json
-sfcc-site-exporter export -c ./export-config.json --instance staging
+sfcc-site-exporter export -c ./export-config.json --from staging
 # or short form
-sfcc-site-exporter export -c ./export-config.json -n staging
+sfcc-site-exporter export -c ./export-config.json -f staging
 
 # Export from one instance and import to another
-sfcc-site-exporter export -c ./export-config.json -n dev --import-to staging
+sfcc-site-exporter export -c ./export-config.json -f dev --to staging
+# or short form
+sfcc-site-exporter export -c ./export-config.json -f dev -t staging
 
 # Set timeout (in seconds)
 sfcc-site-exporter export -c ./export-config.json --timeout 900
